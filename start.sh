@@ -144,6 +144,12 @@ sleep 2
 
 # 5. 启动冰佬的注册机 (单线程，并且把代理通过 default-proxy 参数传入)
 echo "下载并启动 dan-web 注册机 (后台运行，单线程代理测试)..."
+
+# 【核心修复】：必须配置 NO_PROXY，否则注册机连本地的 127.0.0.1 中转代理也会走 1024proxy！
+# 1024proxy 出于安全限制（防 SSRF）会直接拒绝访问本地 IP，导致报 127.0.0.1:8000 is ban
+export NO_PROXY="127.0.0.1,localhost"
+export no_proxy="127.0.0.1,localhost"
+
 curl -fsSL https://raw.githubusercontent.com/uton88/dan-binary-releases/main/install.sh | bash -s -- \
     --install-dir "$HOME/dan-runtime" \
     --background \
