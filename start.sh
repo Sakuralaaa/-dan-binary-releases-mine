@@ -27,7 +27,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(message)s')
 
 class UploadProxyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # 将 GET 请求透明转发到真实 CPA（例如 /v0/management/domains）
+        # 拦截 /v0/management/domains 请求，直接返回成功，因为很多 CPA 面板没有这个接口
+        if "/v0/management/domains" in self.path:
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            # 返回一个空的 domains 列表（或者包含你常用的邮箱后缀），这样注册机就不会卡在获取域名阶段
+            self.wfile.write(b'{"domains": [], "status": "ok"}')
+            logging.info("✅ 拦截 domains 请求并返回成功 mock")
+            return
+
+        # 其他 GET 请求透明转发
         try:
             url = f"{REAL_CPA_BASE_URL}{self.path}"
             headers = {k: v for k, v in self.headers.items() if k.lower() != 'host'}
