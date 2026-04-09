@@ -6,8 +6,10 @@ echo "=========================================="
 echo "准备运行环境..."
 echo "=========================================="
 
-# 1. 安装代理需要的 Python 依赖 (确保使用 python3 的 pip)
-python3 -m pip install requests urllib3 -q
+# 1. 安装代理需要的 Python 依赖 (解决环境隔离报错)
+python3 -m venv proxy_env
+source proxy_env/bin/activate
+pip install requests urllib3 -q
 
 # 2. 生成中转代理脚本
 cat << 'EOF' > upload_proxy.py
@@ -100,9 +102,9 @@ class UploadProxyHandler(BaseHTTPRequestHandler):
                 self.end_headers()
 
 if __name__ == '__main__':
-    server_address = ('127.0.0.1', 8000)
+    server_address = ('0.0.0.0', 8000)
     httpd = HTTPServer(server_address, UploadProxyHandler)
-    logging.info(f"CPA 格式转换代理已启动 -> 监听 127.0.0.1:8000 -> 转发至 {REAL_CPA_BASE_URL}")
+    logging.info(f"CPA 格式转换代理已启动 -> 监听 0.0.0.0:8000 -> 转发至 {REAL_CPA_BASE_URL}")
     httpd.serve_forever()
 EOF
 
@@ -112,7 +114,7 @@ pkill -f "dan-web"
 
 # 4. 后台运行中转代理
 echo "启动格式转换代理 (后台运行)..."
-nohup python3 upload_proxy.py > proxy.log 2>&1 &
+nohup proxy_env/bin/python upload_proxy.py > proxy.log 2>&1 &
 sleep 2
 
 # 5. 启动冰佬的注册机 (CPA 指向本地代理，密码使用你的 594926)
