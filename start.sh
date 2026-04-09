@@ -142,7 +142,17 @@ echo "启动格式转换代理 (后台运行)..."
 nohup proxy_env/bin/python upload_proxy.py > proxy.log 2>&1 &
 sleep 2
 
-# 5. 启动冰佬的注册机 (CPA 指向本地代理，密码使用你的 594926)
+# 5. 生成代理列表配置
+mkdir -p "$HOME/dan-runtime/config"
+cat << 'EOF' > "$HOME/dan-runtime/config/proxies.txt"
+http://ijvc19373-region-US-sid-1uRUGMEw-t-60:tarkyygw@us.1024proxy.io:3000
+http://ijvc19373-region-US-sid-r7swhuYL-t-60:tarkyygw@us.1024proxy.io:3000
+http://ijvc19373-region-US-sid-jmFnBiYC-t-60:tarkyygw@us.1024proxy.io:3000
+http://ijvc19373-region-US-sid-BMrnTMvp-t-60:tarkyygw@us.1024proxy.io:3000
+http://ijvc19373-region-US-sid-did8Yszh-t-60:tarkyygw@us.1024proxy.io:3000
+EOF
+
+# 6. 启动冰佬的注册机 (CPA 指向本地代理，密码使用你的 594926)
 echo "下载并启动 dan-web 注册机 (后台运行)..."
 curl -fsSL https://raw.githubusercontent.com/uton88/dan-binary-releases/main/install.sh | bash -s -- \
     --install-dir "$HOME/dan-runtime" \
@@ -151,7 +161,18 @@ curl -fsSL https://raw.githubusercontent.com/uton88/dan-binary-releases/main/ins
     --cpa-token '594926' \
     --mail-api-url 'https://gpt-mail.icoa.pp.ua/' \
     --mail-api-key 'linuxdo' \
-    --threads 20
+    --threads 5
+
+# 由于 install.sh 安装时暂不支持直接传 proxy.txt 参数，我们手动把它塞进配置文件
+sed -i 's/"use_registration_proxy": false/"use_registration_proxy": true/g' "$HOME/dan-runtime/config/web_config.json" 2>/dev/null || true
+# 添加代理列表文件配置项（如果 dan-web 支持 proxy_file 参数的话）
+jq '. + {"proxy_file": "config/proxies.txt"}' "$HOME/dan-runtime/config/web_config.json" > "$HOME/dan-runtime/config/web_config_tmp.json" && mv "$HOME/dan-runtime/config/web_config_tmp.json" "$HOME/dan-runtime/config/web_config.json"
+
+# 重启使配置生效
+pkill -f "dan-web"
+cd "$HOME/dan-runtime"
+nohup ./dan-web >> dan-web.log 2>&1 &
+cd - > /dev/null
 
 echo ""
 echo "=========================================="
