@@ -6,8 +6,8 @@ echo "=========================================="
 echo "准备运行环境..."
 echo "=========================================="
 
-# 1. 安装代理需要的 Python 依赖
-pip install requests urllib3 -q
+# 1. 安装代理需要的 Python 依赖 (确保使用 python3 的 pip)
+python3 -m pip install requests urllib3 -q
 
 # 2. 生成中转代理脚本
 cat << 'EOF' > upload_proxy.py
@@ -19,50 +19,85 @@ import urllib3
 
 urllib3.disable_warnings()
 
-REAL_CPA_BASE_URL = "https://cli-proxy-api-plus-latest-n13w.onrender.com/"
+REAL_CPA_BASE_URL = "https://cli-proxy-api-plus-latest-n13w.onrender.com"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(message)s')
 
 class UploadProxyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # 将 GET 请求透明转发到真实 CPA（例如 /v0/management/domains）
+        try:
+            url = f"{REAL_CPA_BASE_URL}{self.path}"
+            headers = {k: v for k, v in self.headers.items() if k.lower() != 'host'}
+            resp = requests.get(url, headers=headers, verify=False, timeout=30)
+            self.send_response(resp.status_code)
+            for k, v in resp.headers.items():
+                if k.lower() not in ['transfer-encoding', 'content-encoding']:
+                    self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(resp.content)
+        except Exception as e:
+            logging.error(f"GET Proxy Error: {e}")
+            self.send_response(500)
+            self.end_headers()
+
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
         auth_header = self.headers.get('Authorization')
         
-        try:
-            token_data = json.loads(post_data.decode('utf-8'))
-            email = token_data.get("email", "unknown_email")
-            logging.info(f"[*] 收到 Token: {email}")
-            
-            filename = f"{email}.json"
-            content = json.dumps(token_data, ensure_ascii=False).encode("utf-8")
-            
-            upload_url = f"{REAL_CPA_BASE_URL.rstrip('/')}/v0/management/auth-files"
-            headers = {}
-            if auth_header:
-                headers["Authorization"] = auth_header
+        # 拦截 /auth-files 上传，转换格式
+        if "/v0/management/auth-files" in self.path:
+            try:
+                token_data = json.loads(post_data.decode('utf-8'))
+                email = token_data.get("email", "unknown_email")
+                logging.info(f"[*] 收到 Token: {email}")
                 
-            # 使用 multipart/form-data 格式上传到真实的 CPA
-            files = {"file": (filename, content, "application/json")}
-            resp = requests.post(upload_url, files=files, headers=headers, verify=False, timeout=30)
-            
-            if 200 <= resp.status_code < 300:
-                logging.info(f"✅ 成功转换为文件并上传到云端 CPA ({resp.status_code})")
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(b'{"status": "ok"}')
-            else:
-                logging.error(f"❌ 上传到云端失败: HTTP {resp.status_code} - {resp.text}")
+                filename = f"{email}.json"
+                content = json.dumps(token_data, ensure_ascii=False).encode("utf-8")
+                
+                upload_url = f"{REAL_CPA_BASE_URL}/v0/management/auth-files"
+                headers = {}
+                if auth_header:
+                    headers["Authorization"] = auth_header
+                    
+                # 使用 multipart/form-data 格式上传到真实的 CPA
+                files = {"file": (filename, content, "application/json")}
+                resp = requests.post(upload_url, files=files, headers=headers, verify=False, timeout=30)
+                
+                if 200 <= resp.status_code < 300:
+                    logging.info(f"✅ 成功转换为文件并上传到云端 CPA ({resp.status_code})")
+                else:
+                    logging.error(f"❌ 上传到云端失败: HTTP {resp.status_code} - {resp.text}")
+
                 self.send_response(resp.status_code)
+                for k, v in resp.headers.items():
+                    if k.lower() not in ['transfer-encoding', 'content-encoding']:
+                        self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(resp.content)
                 
-        except Exception as e:
-            logging.error(f"❌ 代理处理异常: {e}")
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            except Exception as e:
+                logging.error(f"❌ 代理处理异常: {e}")
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+        else:
+            # 其它 POST 请求透明转发
+            try:
+                url = f"{REAL_CPA_BASE_URL}{self.path}"
+                headers = {k: v for k, v in self.headers.items() if k.lower() != 'host'}
+                resp = requests.post(url, data=post_data, headers=headers, verify=False, timeout=30)
+                self.send_response(resp.status_code)
+                for k, v in resp.headers.items():
+                    if k.lower() not in ['transfer-encoding', 'content-encoding']:
+                        self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(resp.content)
+            except Exception as e:
+                logging.error(f"POST Proxy Error: {e}")
+                self.send_response(500)
+                self.end_headers()
 
 if __name__ == '__main__':
     server_address = ('127.0.0.1', 8000)
