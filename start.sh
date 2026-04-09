@@ -29,12 +29,27 @@ class UploadProxyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # 拦截 /v0/management/domains 请求，直接返回成功，因为很多 CPA 面板没有这个接口
         if "/v0/management/domains" in self.path:
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            # 返回一个空的 domains 列表（或者包含你常用的邮箱后缀），这样注册机就不会卡在获取域名阶段
-            self.wfile.write(b'{"domains": [], "status": "ok"}')
-            logging.info("✅ 拦截 domains 请求并返回成功 mock")
+            try:
+                # 动态从冰佬真实的接口拉取当前支持的邮箱域名列表
+                headers = {"Authorization": "Bearer linuxdo"}
+                resp = requests.get("https://gpt-up.icoa.pp.ua/v0/management/domains", headers=headers, timeout=10)
+                
+                # 解析获取到的 json，并过滤出只有 .com 结尾的域名
+                data = resp.json()
+                com_domains = [d for d in data.get("domains", []) if d.endswith(".com")]
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"domains": com_domains}).encode('utf-8'))
+                logging.info(f"✅ 动态获取 domains 成功，已过滤出 .com 域名共 {len(com_domains)} 个")
+            except Exception as e:
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                # 如果拉取失败，给几个备用的 .com 域名兜底
+                self.wfile.write(b'{"domains": ["*.mail.ultramandsb.com", "*.mail.linkjrzl.com", "*.mail.truerealbill.com"]}')
+                logging.error(f"❌ 动态获取 domains 失败，使用备用 .com 域名: {e}")
             return
 
         # 其他 GET 请求透明转发
